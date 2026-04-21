@@ -1,0 +1,8 @@
+{
+  "projects": [
+    {
+      "repo": "torvalds/linux",
+      "featured": true
+    }
+  ]
+}
