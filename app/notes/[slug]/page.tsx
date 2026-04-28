@@ -10,20 +10,26 @@ export async function generateStaticParams() {
 export async function generateMetadata({
   params,
 }: {
-  params: { slug: string };
+  params: Promise<{ slug: string }>;
 }) {
   try {
-    const note = getNoteBySlug(params.slug);
+    const { slug } = await params;
+    const note = getNoteBySlug(slug);
     return { title: note.frontmatter.title };
   } catch {
     return {};
   }
 }
 
-export default function NotePostPage({ params }: { params: { slug: string } }) {
+export default async function NotePostPage({
+  params,
+}: {
+  params: Promise<{ slug: string }>;
+}) {
+  const { slug } = await params;
   let note;
   try {
-    note = getNoteBySlug(params.slug);
+    note = getNoteBySlug(slug);
   } catch {
     notFound();
   }

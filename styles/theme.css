@@ -42,8 +42,6 @@
 
 @media (min-width: 1280px) {
   :root {
-    --sidebar-width: 275px;
-    --content-max: 780px;
     --h1: 2.7rem;
     --h2: 2rem;
     --h3: 1.55rem;
@@ -53,8 +51,6 @@
 
 @media (min-width: 1920px) {
   :root {
-    --sidebar-width: 300px;
-    --content-max: 920px;
     --h1: 3rem;
     --h2: 2.2rem;
     --h3: 1.65rem;
@@ -156,6 +152,8 @@ a:hover {
   grid-template-columns: var(--sidebar-width) 1fr;
   grid-template-rows: 1fr;
   min-height: 100vh;
+  max-width: calc(var(--sidebar-width) + var(--content-max) + 4rem);
+  margin: 0 auto;
 }
 
 /* ─── Sidebar ─────────────────────────────────────────────── */
@@ -186,7 +184,7 @@ a:hover {
 
 .sidebar-logo {
   font-weight: 700;
-  font-size: 1.1rem;
+  font-size: 2rem;
   color: var(--fg);
   text-decoration: none;
   letter-spacing: -0.01em;
@@ -207,7 +205,7 @@ a:hover {
 }
 
 .sidebar-section-title {
-  font-size: 0.95rem;
+  font-size: 1rem;
   font-weight: 700;
   color: var(--fg);
   margin-bottom: 0.6rem;
@@ -232,7 +230,7 @@ a:hover {
 
 .sidebar-nav a {
   display: block;
-  font-size: 0.9rem;
+  font-size: 1rem;
   color: var(--fg-muted);
   text-decoration: none;
   padding: 0.3rem 0.5rem;
@@ -256,7 +254,7 @@ a:hover {
 }
 
 .sidebar-links a {
-  font-size: 0.875rem;
+  font-size: 1rem;
   color: var(--fg-muted);
   text-decoration: none;
 }
@@ -449,8 +447,8 @@ h4 {
 }
 
 .portrait-wrapper {
-  width: 120px;
-  height: 120px;
+  width: clamp(100px, 15vw, 250px);
+  height: clamp(100px, 15vw, 250px);
   border-radius: 50%;
   overflow: hidden;
   flex-shrink: 0;
@@ -820,14 +818,12 @@ h4 {
   .prose {
     font-size: 1.075rem;
     line-height: 1.85;
-    justify-self: center;
   }
 }
 
 @media (min-width: 1920px) {
   .prose {
     font-size: 1.1rem;
-    justify-self: center;
   }
 }
 
@@ -1010,48 +1006,6 @@ h4 {
 
 /* ─── Responsive ──────────────────────────────────────────── */
 
-@media (min-width: 1440px) {
-  .portrait-wrapper {
-    width: 250px;
-    height: 250px;
-    border-radius: 50%;
-    overflow: hidden;
-    flex-shrink: 0;
-    background: var(--bg-secondary);
-    border: 2px solid var(--border);
-  }
-
-  .home-section {
-    margin-bottom: 3rem;
-    padding-right: 6rem;
-  }
-
-  .page-content {
-    width: 75%;
-  }
-}
-
-@media (min-width: 2560px) {
-  .portrait-wrapper {
-    width: 250px;
-    height: 250px;
-    border-radius: 50%;
-    overflow: hidden;
-    flex-shrink: 0;
-    background: var(--bg-secondary);
-    border: 2px solid var(--border);
-  }
-
-  .home-section {
-    margin-bottom: 3rem;
-    padding-right: 6rem;
-  }
-
-  .page-content {
-    width: 50%;
-  }
-}
-
 @media (max-width: 768px) {
   .layout-wrapper {
     grid-template-columns: 1fr;
@@ -1157,7 +1111,7 @@ h4 {
   }
 
   .hero-tagline {
-    font-size: 0.95rem;
+    font-size: 1rem;
   }
 
   .section-header h2 {

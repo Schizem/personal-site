@@ -18,7 +18,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Ty",
+    default: "Tyler Hay's Website",
     template: "%s | Ty",
   },
   description: "Software engineer. Writing about programming, web dev, and CS.",
@@ -44,13 +44,27 @@ export default function RootLayout({
             __html: `try{const t=localStorage.getItem('theme');if(t==='dark'||(!t&&matchMedia('(prefers-color-scheme:dark)').matches))document.documentElement.setAttribute('data-theme','dark');const c=localStorage.getItem('accent-color');if(c&&c!=='amber')document.documentElement.setAttribute('data-color',c)}catch{}`,
           }}
         />
+        <link
+          rel="icon"
+          type="image/png"
+          href="/favicon-96x96.png"
+          sizes="96x96"
+        />
+        <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+        <link rel="shortcut icon" href="/favicon.ico" />
+        <link
+          rel="apple-touch-icon"
+          sizes="180x180"
+          href="/apple-touch-icon.png"
+        />
+        <link rel="manifest" href="/site.webmanifest" />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <div className="layout-wrapper">
           <aside className="sidebar">
             <div className="sidebar-brand">
               <Link href="/" className="sidebar-logo">
-                ty
+                Tyler Hay
               </Link>
               <div className="sidebar-controls">
                 <ColorPicker />
@@ -63,7 +77,7 @@ export default function RootLayout({
             <section className="sidebar-section">
               <p className="sidebar-section-title">About Me</p>
               <p className="sidebar-blurb">
-                I&apos;m Ty, a software engineer. This is my digital garden.
+                Software Engineer, Computer Hobbyist, and Outdoorsman.{" "}
               </p>
             </section>
 
@@ -103,7 +117,7 @@ export default function RootLayout({
           {/* Mobile top bar — visible only on small screens */}
           <header className="mobile-header">
             <Link href="/" className="sidebar-logo">
-              ty
+              Tyler Hay
             </Link>
             <nav className="mobile-nav">
               {NAV.map(({ href, label }) => (
