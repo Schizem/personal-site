@@ -16,16 +16,16 @@ export async function GET() {
       <guid>${SITE_URL}/blog/${post.slug}</guid>
       <pubDate>${new Date(post.frontmatter.date).toUTCString()}</pubDate>
       <description><![CDATA[${post.frontmatter.description ?? ""}]]></description>
-    </item>`
+    </item>`,
     )
     .join("");
 
   const xml = `<?xml version="1.0" encoding="UTF-8"?>
 <rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
-    <title>Ty</title>
+    <title>Call me Ty</title>
     <link>${SITE_URL}</link>
-    <description>Software engineer. Writing about programming, web dev, and CS.</description>
+    <description>Software Engineer. Writing about programming, web dev, computer science, hobbies.</description>
     <language>en-us</language>
     <atom:link href="${SITE_URL}/feed.xml" rel="self" type="application/rss+xml"/>
     ${items}

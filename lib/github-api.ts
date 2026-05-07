@@ -13,6 +13,7 @@ export interface RepoMeta {
   stargazers_count: number;
   language: string | null;
   topics: string[];
+  created_at: string;
 }
 
 export interface Project extends ProjectConfig {

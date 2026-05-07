@@ -108,6 +108,15 @@ export default function RootLayout({
                   </a>
                 </li>
                 <li>
+                  <a
+                    href="https://www.linkedin.com/in/tyler-hay-13446b336/"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    LinkedIn
+                  </a>
+                </li>
+                <li>
                   <a href="/feed.xml">RSS feed</a>
                 </li>
               </ul>
@@ -130,18 +139,20 @@ export default function RootLayout({
           </header>
 
           <div className="main-area">
-            {children}
-            <footer className="site-footer">
-              <a
-                href="https://github.com/Schizem"
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                GitHub
-              </a>
-              {" · "}
-              <a href="/feed.xml">RSS</a>
-            </footer>
+            <div className="content-col">
+              {children}
+              <footer className="site-footer">
+                <a
+                  href="https://github.com/Schizem"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  GitHub
+                </a>
+                {" · "}
+                Call me Ty.
+              </footer>
+            </div>
           </div>
         </div>
       </body>
