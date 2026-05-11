@@ -38,7 +38,7 @@ export default async function NotePostPage({
     <main className="page-content prose">
       <div className="post-header">
         <Link href="/notes" className="back-link">
-          ← Notes
+          ← Slice of Life
         </Link>
         <h1>{note.frontmatter.title}</h1>
         <div className="post-meta">

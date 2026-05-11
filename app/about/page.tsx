@@ -31,26 +31,13 @@ export default function AboutPage() {
       <h1>About Me</h1>
 
       <p>
-        Hey, I'm Ty. Welcome to my digital garden. This is a catch-all site for
-        showcasing my projects, writing about my hobbies, and exploring computer
-        science outside of the classroom. I am a software engineer, but I also
-        have some cool critters, a wonderful wife, and I write a newsletter for
-        my local community. I enjoy creative writing, experimenting with brewing
-        meads and wines, the occasional video game, and wandering the world.
-      </p>
-      <p>
-        There were a few goals that drove me to create this site; I've always
-        wanted a small corner of the internet for self-expression, I wanted to
-        display my project portfolio to aid in my search for career
-        opportunities, and I wanted an organizational focal-point to continue
-        exploring and learning new technologies.
-      </p>
-      <p>
-        To strengthen my technical skills, I'll be doing deep dives and writing
-        long-form tutorials for myself on a variety of computer science and
-        development topics. I'll also be posting notes about the plethora of
-        hobbies and interests I enjoy. I hope my site inspires you to learn
-        something new!
+        Hey, I'm Ty. By day I'm a software engineer; by night I'm a homebrewer,
+        a creative writer, a newsletter editor, and a proud keeper of some very
+        cool critters. All alongside a wonderful wife who tolerates my
+        ever-expanding list of hobbies. This site is my digital garden: a place
+        to share project work, write about what I'm learning, and document the
+        rabbit holes I fall down. If something here sparks your curiosity,
+        that's the whole point.
       </p>
 
       <h2>Links</h2>
@@ -82,7 +69,7 @@ export default function AboutPage() {
       <ul>
         <li>Searching for career opportunities</li>
         <li>Tweaking this website</li>
-        <li>Digging into IoT concepts</li>
+        <li>Exploring IoT concepts</li>
         <li>
           Experiencing{" "}
           <a href="https://www.brandonsanderson.com/pages/what-is-the-cosmere">
@@ -90,13 +77,7 @@ export default function AboutPage() {
           </a>
         </li>
         <li>Planning out a patio salsa garden</li>
-        <li>
-          Being a supporting dev for{" "}
-          <a href="https://tracealter.com/wiki/doku.php?id=start">
-            trace/ALTER
-          </a>
-          , a indie roleplaying game
-        </li>
+        <li>Being a supporting developer for a indie roleplaying game</li>
       </ul>
 
       <h2>Technicals</h2>

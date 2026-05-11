@@ -41,7 +41,7 @@ export default async function BlogPostPage({
     <main className="page-content prose">
       <div className="post-header">
         <Link href="/blog" className="back-link">
-          ← Blog
+          ← Tech Talk
         </Link>
         <h1>{post.frontmatter.title}</h1>
         <div className="post-meta">

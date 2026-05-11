@@ -1,13 +1,13 @@
 ---
 title: "Resume"
 date: 2025-05-01
-description: "Tyler Hay — Senior Software Engineer. Full-stack engineer with experience across AWS, React, Angular, Java, and Node.js."
+description: "Full-stack software engineer with experience across AWS, React, Angular, Java, and Node.js."
 draft: false
 ---
 
 # Tyler Hay
 
-Software Engineer. Full-stack engineer with experience across AWS, React, Angular, Java, and Node.js.
+Full-stack software engineer with experience across AWS, React, Angular, Java, and Node.js.
 
 - [Email]()
 - [GitHub](https://github.com/Schizem)

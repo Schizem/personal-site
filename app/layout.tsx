@@ -25,8 +25,8 @@ export const metadata: Metadata = {
 };
 
 const NAV = [
-  { href: "/blog", label: "Blog" },
-  { href: "/notes", label: "Notes" },
+  { href: "/blog", label: "Tech Talk" },
+  { href: "/notes", label: "Slice of Life" },
   { href: "/projects", label: "Projects" },
   { href: "/about", label: "About Me" },
 ];
@@ -115,9 +115,6 @@ export default function RootLayout({
                   >
                     LinkedIn
                   </a>
-                </li>
-                <li>
-                  <a href="/feed.xml">RSS feed</a>
                 </li>
               </ul>
             </section>

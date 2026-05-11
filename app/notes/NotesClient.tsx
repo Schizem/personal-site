@@ -32,7 +32,7 @@ export default function NotesClient({ allNotes }: { allNotes: Note[] }) {
 
   return (
     <main className="page-content">
-      <h1 style={{ marginBottom: "2rem" }}>Notes</h1>
+      <h1 style={{ marginBottom: "2rem" }}>Slice of Life</h1>
 
       <div className="tag-filter">
         <Link

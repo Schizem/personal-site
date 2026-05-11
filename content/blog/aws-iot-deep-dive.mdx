@@ -1,0 +1,303 @@
+---
+title: "AWS for IoT: A Deep Dive"
+date: "2026-05-10"
+tags: ["IoT", "AWS", "Cloud", "Deep-Dive"]
+description: "A self-learning deep dive into IoT concepts and how AWS IoT Core, Greengrass, and surrounding services fit together."
+draft: false
+---
+
+The first Tech Talk! Lately I've been exploring IoT as part of my ongoing self-learning. This post is my attempt to build a mental model of how the Internet of Things works conceptually, and then map those concepts onto AWS's IoT service suite. If you're relatively new to IoT like I am, start from the top. If you're already familiar with the basics, jump to the [AWS services breakdown](#aws-iot-core).
+
+---
+
+## Why AWS?
+
+Great question. AWS and cloud computing in general has been a big focus of mine in my 5 years as a software engineer. The popular cloud computing services are huge, and cover a lot of different areas that I'd like to explore. My experience with AWS in particular has provided a good foundation for me to learn something new, while bridging it to concepts I already understand.
+
+---
+
+## What Is IoT?
+
+The Internet of Things (IoT) refers to the network of physical devices such as sensors, actuators, appliances, vehicles, industrial machines, really any device that collects and exchanges data over the internet. The core idea is simple: take something from the physical world, give it the ability to measure or act, and connect it so that data can flow somewhere and be used.
+
+A basic IoT architecture has four layers:
+
+1. **Devices** - physical hardware with sensors or actuators (a temperature probe, a smart lock, a soil moisture sensor)
+2. **Connectivity** - the protocol and network over which devices communicate (WiFi, cellular, LoRaWAN, Zigbee)
+3. **Cloud** - services that ingest, store, process, and act on data
+4. **Applications** - dashboards, alerts, APIs, or machine learning models that consume the processed data
+
+The challenge isn't any single layer, in fact it seems pretty simple when you look into each layer on it's own. The real magic lies in orchestrating all of them together securely and at scale.
+
+---
+
+## MQTT: The Protocol of IoT
+
+Most IoT devices don't use HTTP. They use [MQTT](https://mqtt.org/) (MQ Telemetry Transport), a lightweight publish/subscribe messaging protocol designed for constrained devices and unreliable networks.
+
+### Publish/Subscribe vs. Request/Response
+
+HTTP is request/response: a client asks, a server answers. MQTT is pub/sub: publishers send messages to a **topic**, and any subscriber listening to that topic receives them. A middleman called a **broker** routes messages between publishers and subscribers.
+
+```
+[Temperature Sensor] --publishes to--> [Broker] --delivers to--> [Cloud Service]
+                                           |
+                                           └-------------delivers to--> [Dashboard App]
+```
+
+This decoupling is powerful: the sensor doesn't know or care who is listening. New subscribers can be added without touching the device firmware.
+
+### MQTT Topics
+
+Topics are hierarchical strings using `/` as a separator. Examples:
+
+```
+home/living-room/temperature
+factory/assembly-line-3/machine-7/condition-monitor
+sensors/+/humidity   ← wildcard: matches any single level
+sensors/#            ← wildcard: matches any level and below
+```
+
+### Why Not HTTP?
+
+- MQTT has a much smaller packet overhead (~2 bytes minimum header vs. HTTP's ~200–800 bytes)
+- It's designed for low-bandwidth, high-latency, unreliable connections
+- It supports persistent sessions, so a device that goes offline can reconnect and receive missed messages
+
+MQTT 5 (the current standard, supported by AWS IoT Core) added quality-of-service improvements, message expiry, and better error reporting over the older MQTT 3.x spec.
+
+---
+
+## AWS IoT Core
+
+[AWS IoT Core](https://docs.aws.amazon.com/iot/latest/developerguide/what-is-aws-iot.html) is the managed MQTT broker and device gateway at the center of AWS's IoT offering. It handles the messy parts of IoT infrastructure: persistent connections, authentication, message routing, and scaling to millions of devices simultaneously.
+
+### How Devices Connect
+
+Devices connect to IoT Core over:
+
+- **MQTT** (port 8883) - this is the primary protocol
+- **MQTT over WebSockets** (port 443) - useful for browser-based clients or firewall-restrictive environments
+- **HTTPS** - great for devices that can only make one-off HTTP calls
+
+Each AWS account gets a unique IoT Core endpoint:
+
+```
+<account-id>.iot.<region>.amazonaws.com
+```
+
+### Authentication with X.509 Certificates
+
+IoT Core uses [mutual TLS (mTLS) with X.509 certificates](https://docs.aws.amazon.com/iot/latest/developerguide/x509-client-certs.html) to authenticate devices. This is different from the username/password auth typically used in web apps.
+
+Here's how it works:
+
+1. AWS generates (or you upload) a certificate and private key pair for each device.
+2. The certificate is attached to a **Thing** in the registry. (more on that below)
+3. When a device connects, it presents its certificate during the TLS handshake.
+4. AWS verifies the certificate is registered, active, and attached to a policy that permits the action the device is trying to take.
+
+The private key never leaves the device. Shockingly even AWS doesn't hold it. I find that to be a much stronger security model than shared API keys.
+
+### The Thing Registry
+
+A [Thing](https://docs.aws.amazon.com/iot/latest/developerguide/thing-registry.html) is an entry in IoT Core's device registry. Simply a record representing a physical device. Each Thing has:
+
+- A unique name
+- Attributes (arbitrary key/value metadata, e.g. `location: "warehouse-B"`)
+- One or more attached X.509 certificates
+- A Thing Type (optional grouping, e.g. `TemperatureSensor`)
+
+The registry isn't just for bookkeeping. It's the source of truth for device identity across the AWS IoT ecosystem.
+
+For large fleets of devices, AWS supports [Just-in-Time Provisioning (JITP)](https://docs.aws.amazon.com/iot/latest/developerguide/jit-provisioning.html): a device can self-register on its first connection using a provisioning template, so you don't have to manually register every device before deployment.
+
+### Device Shadows
+
+What happens when a device is offline and you still need to know (or set) its state? That's what [Device Shadows](https://docs.aws.amazon.com/iot/latest/developerguide/iot-device-shadows.html) are for.
+
+A Device Shadow is a JSON document stored in the cloud that represents a device's state. It has three sections:
+
+```json
+{
+  "state": {
+    "desired": {
+      "thermostat": 72
+    },
+    "reported": {
+      "thermostat": 68
+    },
+    "delta": {
+      "thermostat": 72
+    }
+  }
+}
+```
+
+- **desired** - what an application _wants_ the device state to be
+- **reported** - what the device last said its state actually is
+- **delta** - the difference between desired and reported (conveniently auto-calculated by AWS)
+
+When a device reconnects, it checks the shadow for a delta and acts on it. An app can update a thermostat setpoint whether the device is online or not. The shadow queues the change until the device is ready.
+
+Each Thing can have multiple [named shadows](https://docs.aws.amazon.com/iot/latest/developerguide/iot-device-shadows.html) plus one unnamed (classic) shadow, which is useful for separating concerns on complex devices.
+
+---
+
+## The Rules Engine
+
+[AWS IoT Rules](https://docs.aws.amazon.com/iot/latest/developerguide/iot-rules.html) are how you get data out of IoT Core and into the rest of AWS. Rules use a syntax akin to SQL to select data from incoming MQTT messages and route them to downstream services.
+
+A rule has two parts:
+
+1. **SQL statement** - selects and filters message data
+2. **Actions** - where to send the result
+
+### Example Rule
+
+```sql
+SELECT temperature, humidity, timestamp()
+FROM 'sensors/+/environment'
+WHERE temperature > 35
+```
+
+This rule matches any message published to a topic like `sensors/living-room/environment`, extracts three fields, and only fires if `temperature > 35`.
+
+### Supported Actions
+
+The [Rules Engine can route to dozens of AWS services](https://docs.aws.amazon.com/iot/latest/developerguide/iot-rule-actions.html). The most common:
+
+| Destination                                                                         | Use Case                                         |
+| ----------------------------------------------------------------------------------- | ------------------------------------------------ |
+| [Lambda](https://docs.aws.amazon.com/lambda/latest/dg/services-iot.html)            | Custom processing, validation, transformation    |
+| [DynamoDB](https://docs.aws.amazon.com/iot/latest/developerguide/iot-ddb-rule.html) | Real-time storage for hot data                   |
+| S3                                                                                  | Long-term archival of raw payloads               |
+| [SNS](https://docs.aws.amazon.com/iot/latest/developerguide/iot-sns-rule.html)      | Email/SMS alerts when thresholds are breached    |
+| Kinesis                                                                             | High-throughput streaming to analytics pipelines |
+| CloudWatch                                                                          | Custom metrics and operational monitoring        |
+| IoT Events                                                                          | State machine-based event detection              |
+
+Rules can have multiple actions, so one message can fan out to several destinations simultaneously.
+
+---
+
+## AWS IoT Greengrass
+
+[AWS IoT Greengrass](https://docs.aws.amazon.com/greengrass/v2/developerguide/what-is-iot-greengrass.html) extends the cloud to the edge. It's software that runs on a local device (a gateway, a Raspberry Pi, an industrial PC) and allows you to run Lambda functions, ML inference, and pub/sub messaging locally without a cloud connection.
+
+### The Problem It Solves
+
+Consider a factory assembly line with 200 sensors generating data every 100ms. Sending all of that raw data to the cloud would be:
+
+- **Expensive** - massive data transfer costs
+- **Slow** - round-trip latency for time-critical decisions
+- **Fragile** - what happens when the internet goes down?
+
+Greengrass handles this by doing the heavy lifting at the edge: aggregating, filtering, and running inference locally. Only meaningful results (anomalies, summaries, alerts) get sent to the cloud.
+
+### How It Works
+
+A Greengrass **core device** runs the Greengrass nucleus (core, mandatory component) and acts as a local MQTT broker for nearby IoT devices. You deploy **components** (Lambda functions, Docker containers, ML models) to the core device from the cloud. The core device can:
+
+- Run processing logic locally
+- Communicate with other devices over the local network
+- Sync state with IoT Core when connectivity is available
+- Ingest data directly to S3 even from intermittent connections
+
+> Self Note: [AWS IoT Greengrass v1 reaches end-of-support on October 7, 2026](https://aws.amazon.com/greengrass/). Use v2 (current release: 2.17.0) for all new projects.
+
+---
+
+## Supporting Services
+
+AWS IoT Core is rarely used alone. Here's how the surrounding AWS ecosystem plugs in:
+
+### DynamoDB - Hot Storage
+
+[DynamoDB](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-time-series.html) is the go-to for storing IoT time-series data that needs low-latency reads. The recommended key design:
+
+- **Partition key**: device ID (e.g., `sensor-42`)
+- **Sort key**: ISO 8601 timestamp (e.g., `2026-05-10T14:23:00Z`)
+
+This lets you efficiently query "give me all readings from sensor-42 in the last hour" using a key condition expression. For cost control with aging data, set up TTL on records and transition old data to S3.
+
+### Lambda - Custom Processing
+
+Lambda functions are invoked by the **Rules Engine** for anything that needs code logic: unit conversion, anomaly detection, data enrichment, calling external APIs. Lambda scales automatically with message volume and reports metrics to CloudWatch automatically.
+
+### S3 - Cold Storage
+
+Raw MQTT payloads can be routed to S3 for long-term archival. Combined with S3 Intelligent-Tiering, older data automatically moves to cheaper storage classes. This is common for regulatory compliance (keeping raw sensor logs for N years) without paying for hot-storage costs.
+
+### CloudWatch - Observability
+
+[CloudWatch](https://docs.aws.amazon.com/iot/latest/developerguide/monitoring-cloudwatch.html) gives you metrics on IoT Core itself (message count, rule executions, failed deliveries) as well as Lambda logs and custom metrics your functions emit. You can even set alarms on anomalous device behavior. For example, alerting if a device stops publishing for more than 10 minutes.
+
+---
+
+## Putting It Together: An End-to-End Architecture
+
+Here's a real-world scenario to picture it better: outdoor environmental sensors (temperature, humidity) set up around a university campus that collect data and report to a web dashboard.
+
+```
+[Sensor]
+   │
+   │ MQTT: sensors/campus/node-12/environment
+   │ { "temp": 24.3, "humidity": 61, "battery": 87 }
+   ▼
+[AWS IoT Core]
+   │ Authenticates device via X.509 cert
+   │ Updates Device Shadow with latest reading
+   │
+   ├─── Rules Engine ─────────────────────────────────────┐
+   │    SELECT *, timestamp() FROM 'sensors/campus/+/...' │
+   │                                                      │
+   │    Action 1: Lambda                                  │
+   │      └─ validate, enrich, write to DynamoDB          │
+   │                                                      │
+   │    Action 2: SNS (if temp > 38)                      │
+   │      └─ email alert to ops team                      │
+   │                                                      │
+   │    Action 3: S3                                      │
+   │      └─ archive raw payload                          │
+   └──────────────────────────────────────────────────────┘
+
+[DynamoDB]
+   │ Partition: "node-12" | Sort: "2026-05-10T14:23:00Z"
+   ▼
+[Dashboard API] ──► [Web App]
+```
+
+Key decisions in this design:
+
+- **Device Shadows** would let the dashboard show current state even if a sensor missed its last publish
+- **Rules Engine fan-out** means a single Lambda write and an SNS alert happen from one incoming message
+- **DynamoDB TTL** removes records older than 90 days, but a lifecycle rule copies them to S3 first for archival
+- **CloudWatch alarm** fires if `NumberOfMessagesReceived` drops below expected baseline
+
+---
+
+## What's Next?
+
+This write up serves as a good foundation. Some directions worth exploring from here:
+
+- **[AWS IoT Device Defender](https://docs.aws.amazon.com/iot/latest/developerguide/device-defender.html)** - auditing and anomaly detection for device behavior
+- **[AWS IoT Events](https://docs.aws.amazon.com/iotevents/latest/developerguide/what-is-iotevents.html)** - state machine-based event detection (e.g., "alert if temp stays above threshold for 5+ minutes")
+- **[AWS IoT SiteWise](https://docs.aws.amazon.com/iot-sitewise/latest/userguide/what-is-sitewise.html)** - purpose-built for industrial equipment monitoring
+- **[AWS IoT TwinMaker](https://docs.aws.amazon.com/iot-twinmaker/latest/guide/what-is-twinmaker.html)** - building digital twins of real-world systems
+
+---
+
+## References
+
+- [What is AWS IoT Core](https://docs.aws.amazon.com/iot/latest/developerguide/what-is-aws-iot.html)
+- [How AWS IoT Works](https://docs.aws.amazon.com/iot/latest/developerguide/aws-iot-how-it-works.html)
+- [X.509 Client Certificates](https://docs.aws.amazon.com/iot/latest/developerguide/x509-client-certs.html)
+- [AWS IoT Device Shadow Service](https://docs.aws.amazon.com/iot/latest/developerguide/iot-device-shadows.html)
+- [Rules for AWS IoT](https://docs.aws.amazon.com/iot/latest/developerguide/iot-rules.html)
+- [AWS IoT Rule Actions](https://docs.aws.amazon.com/iot/latest/developerguide/iot-rule-actions.html)
+- [What is AWS IoT Greengrass](https://docs.aws.amazon.com/greengrass/v2/developerguide/what-is-iot-greengrass.html)
+- [DynamoDB Time Series Best Practices](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/bp-time-series.html)
+- [Monitor AWS IoT with CloudWatch](https://docs.aws.amazon.com/iot/latest/developerguide/monitoring-cloudwatch.html)
+- [Using AWS Lambda with AWS IoT](https://docs.aws.amazon.com/lambda/latest/dg/services-iot.html)
+- [MQTT Standard](https://mqtt.org/)

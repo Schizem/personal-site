@@ -31,9 +31,9 @@ export default async function HomePage() {
         <div className="hero-text">
           <h1>Hey, I'm Ty.</h1>
           <p className="hero-tagline">
-            I'm a software engineer, amateur vintner, and aspiring wizard. I've
-            created this little digital garden to showcase my portfolio and blog
-            about my professional and personal interests.
+            I'm a software engineer, amateur vintner, and aspiring wizard. Below
+            you'll find my technical writing, personal notes, and open-source
+            projects. Settle in and learn something new with me.
           </p>
           <div className="hero-links">
             <Link href="/about">About Me</Link>
@@ -71,12 +71,14 @@ export default async function HomePage() {
 
       <section className="home-section">
         <div className="section-header">
-          <h2>Blog</h2>
+          <h2>Tech Talk</h2>
           <Link href="/blog" className="see-all">
             All posts →
           </Link>
         </div>
-        <p className="section-subtitle">Guides, references, and tutorials.</p>
+        <p className="section-subtitle">
+          Technical blogs for guides, references, and tutorials.
+        </p>
         {posts.map((post) => (
           <div key={post.slug} className="post-row">
             <span className="post-row-date">
@@ -91,12 +93,14 @@ export default async function HomePage() {
 
       <section className="home-section">
         <div className="section-header">
-          <h2>Notes</h2>
+          <h2>Slice of Life</h2>
           <Link href="/notes" className="see-all">
             All notes →
           </Link>
         </div>
-        <p className="section-subtitle">Life, projects, and everything else.</p>
+        <p className="section-subtitle">
+          Notes on life, hobbies, and everything else.
+        </p>
         {notes.map((note) => (
           <div key={note.slug} className="post-row">
             <span className="post-row-date">
@@ -117,9 +121,7 @@ export default async function HomePage() {
               All projects →
             </Link>
           </div>
-          <p className="section-subtitle">
-            Open-source work and experiments.
-          </p>
+          <p className="section-subtitle">Open-source work and experiments.</p>
           <div className="project-grid">
             {featured.map((project) => {
               const year = new Date(project.meta.created_at).getUTCFullYear();

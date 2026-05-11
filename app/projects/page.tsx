@@ -54,9 +54,7 @@ export default async function ProjectsPage() {
   return (
     <main className="page-content">
       <h1>Projects</h1>
-      <p className="section-subtitle">
-        Open-source projects I've worked on over the years.
-      </p>
+      <p className="section-subtitle">Public repos from my GitHub.</p>
       <div className="project-grid">
         {projects.map((project) => (
           <ProjectCard key={project.repo} project={project} />
