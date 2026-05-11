@@ -18,10 +18,11 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "Tyler Hay's Website",
+    default: "Ty's Digital Garden",
     template: "%s | Ty",
   },
-  description: "Software engineer. Writing about programming, web dev, and CS.",
+  description:
+    "Software Engineer's ramblings about computer science, hobbies, and life.",
 };
 
 const NAV = [
