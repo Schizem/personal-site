@@ -1,0 +1,313 @@
+---
+title: "How This Site Works: A Technical Deep Dive"
+date: "2026-05-15"
+tags: ["next.js", "mdx", "obsidian", "static-sites"]
+description: "A walkthrough of how this site is built: Next.js App Router, MDX pipeline, slug routing, and Obsidian-powered content."
+draft: false
+---
+
+This site is built with [Next.js](https://nextjs.org), deployed as a fully static site on GitHub Pages. There's no server, no database, no CMS. Content lives as plain Markdown files on disk, and the entire site is pre-built into static HTML at deploy time. Here's how all of it fits together.
+
+---
+
+## The Stack at a Glance
+
+| Layer               | Tool                 |
+| ------------------- | -------------------- |
+| Framework           | Next.js (App Router) |
+| Language            | TypeScript           |
+| Content format      | MDX (Markdown + JSX) |
+| Frontmatter parser  | `gray-matter`        |
+| MDX renderer        | `next-mdx-remote`    |
+| Syntax highlighting | `rehype-pretty-code` |
+| Hosting             | GitHub Pages         |
+| Writing environment | Obsidian             |
+
+---
+
+## What is Next.js?
+
+Next.js is a React framework that handles routing, rendering, and build infrastructure. The old "Pages Router" mapped files in a `pages/` directory to URLs. The modern **App Router** (used here) uses an `app/` directory instead, where every `page.tsx` file becomes a route.
+
+```
+app/
+  page.tsx           →  /
+  blog/
+    page.tsx         →  /blog
+    [slug]/
+      page.tsx       →  /blog/any-post-name
+  notes/
+    page.tsx         →  /notes
+    [slug]/
+      page.tsx       →  /notes/any-note-name
+  about/
+    page.tsx         →  /about
+```
+
+The brackets (`[slug]`) are Next.js's syntax for **dynamic segments**, where a single page file handles any matching URL. More on those below.
+
+Every component in the App Router is a **React Server Component** by default. This means the component runs on the server (or at build time for static exports) and sends plain HTML to the browser with no JavaScript bundle needed for the component itself. Client components opt in with `"use client"` at the top of the file.
+
+---
+
+## Static Export
+
+This site uses `output: "export"` in `next.config.ts`:
+
+```typescript
+// next.config.ts
+const nextConfig: NextConfig = {
+  output: "export",
+  images: {
+    unoptimized: true,
+  },
+};
+```
+
+This tells Next.js to generate a folder of plain HTML, CSS, and JS files instead of running a Node server. The output lives in `out/` after `npm run build`. GitHub Pages just serves that folder. No runtime, and no compute costs. My goal was to keep this simple, minimal, and affordable.
+
+The tradeoff: anything that requires a live server is off the table. No dynamic API routes that query a database, no on-demand server-side rendering per request. Every page must be knowable at build time. However that is ok! I have no intention of needing a live server for this site in particular. Future projects and demos that I'll feature on this site will have separate infrastructure.
+
+---
+
+## How Slugs Work
+
+When I was first looking into Next.js, I seen the term "slugs" and thought "well that's a silly name.. what does it do?"
+
+A **slug** is the URL-safe identifier for a piece of content, not to be confused with the pesky critter I see all over my back yard. The blog post file for this Tech Talk is named `nextjs-deep-dive.mdx`. The respective slug is `nextjs-deep-dive` and the URL becomes `/blog/nextjs-deep-dive`.
+
+The route file `app/blog/[slug]/page.tsx` handles all blog posts. Without `output: "export"`, Next.js could look up any slug dynamically at request time. With static export, it needs to know every slug ahead of time so it can pre-build each page. That's what `generateStaticParams` does:
+
+```typescript
+// app/blog/[slug]/page.tsx
+export async function generateStaticParams() {
+  return getBlogSlugs().map((slug) => ({ slug }));
+}
+```
+
+At build time, Next.js calls this function and gets back a list like `[{ slug: "nextjs-deep-dive" }, { slug: "other-post" }]`, and renders a separate HTML file for each one.
+
+`getBlogSlugs()` lives in `lib/mdx.ts` and works by reading the filesystem:
+
+```typescript
+// lib/mdx.ts
+function getSlugs(dir: string): string[] {
+  const fullDir = path.join(CONTENT_ROOT, dir);
+  if (!fs.existsSync(fullDir)) return [];
+  return fs
+    .readdirSync(fullDir)
+    .filter((f) => f.endsWith(".mdx"))
+    .map((f) => f.replace(/\.mdx$/, ""));
+}
+
+export function getBlogSlugs(): string[] {
+  return getSlugs("blog");
+}
+```
+
+It reads the `content/blog/` directory, filters for `.mdx` files, and strips the extension. The filename **is** the slug. Adding a new Tech Talk or Slice of Life post is as simple as saving a new `.mdx` file in their associated content folder. No config or registration is needed.
+
+---
+
+## Frontmatter
+
+Each content file starts with a YAML block called **frontmatter**, delimited via `---`. Here's the structure for a blog post:
+
+```mdx
+---
+title: "How This Site Works: A Technical Deep Dive"
+date: "2026-05-15"
+tags: ["next.js", "mdx", "obsidian", "static-sites"]
+description: "A walkthrough of how this site is built: Next.js App Router, MDX pipeline, slug routing, and Obsidian-powered content."
+draft: false
+---
+
+Post content starts here...
+```
+
+The `gray-matter` library parses this out at build time:
+
+```typescript
+// lib/mdx.ts
+export function getPostBySlug(slug: string): Post {
+  const filePath = path.join(CONTENT_ROOT, "blog", `${slug}.mdx`);
+  const raw = fs.readFileSync(filePath, "utf8");
+  const { data, content } = matter(raw);
+  return {
+    slug,
+    frontmatter: data as PostFrontmatter,
+    content, // everything I've written after the --- block
+    readingTime: estimateReadingTime(content),
+  };
+}
+```
+
+`matter(raw)` splits the file into `data` (the parsed YAML object) and `content` (the raw Markdown string below it). Reading time is estimated from word count at 200 words per minute:
+
+```typescript
+function estimateReadingTime(content: string): number {
+  const words = content.trim().split(/\s+/).length;
+  return Math.max(1, Math.round(words / 200));
+}
+```
+
+Slice of Life notes use a slightly different frontmatter shape. There are no tags or description, just a `category` field:
+
+```mdx
+---
+title: "A Slice of Life Note"
+date: "2026-05-15"
+category: "life"
+---
+```
+
+---
+
+## The MDX Pipeline
+
+MDX is Markdown that can embed JSX components. A plain `.md` file is prose. An `.mdx` file can do this:
+
+```mdx
+## Normal heading
+
+Some paragraph text with **bold** and `inline code`.
+
+<Callout type="warning">
+  This is a custom React component inside Markdown.
+</Callout>
+```
+
+The renderer is `MDXRenderer`, a thin wrapper around `next-mdx-remote`:
+
+```typescript
+// components/MDXRenderer.tsx
+import { MDXRemote } from "next-mdx-remote/rsc";
+
+export function MDXRenderer({ source }: { source: string }) {
+  return (
+    <MDXRemote
+      source={source}
+      options={{
+        mdxOptions: {
+          remarkPlugins: [...],
+          rehypePlugins: [...],
+        },
+      }}
+    />
+  );
+}
+```
+
+`next-mdx-remote/rsc` is the React Server Component edition. It compiles and renders MDX entirely at build time with no client JavaScript involved.
+
+### Remark vs Rehype
+
+The pipeline has two phases:
+
+- **Remark** plugins transform the **Markdown AST** (abstract syntax tree). They run before the content is converted to HTML.
+- **Rehype** plugins transform the **HTML AST**. They run after.
+
+This site uses:
+
+| Plugin                     | Phase  | What it does                                                 |
+| -------------------------- | ------ | ------------------------------------------------------------ |
+| `remark-gfm`               | Remark | GitHub Flavored Markdown (tables, strikethrough, task lists) |
+| `remark-wiki-link`         | Remark | Converts `[[Note Name]]` into anchor tags                    |
+| `rehype-pretty-code`       | Rehype | Syntax highlighting with VS Code themes                      |
+| `rehype-slug`              | Rehype | Adds `id` attributes to headings                             |
+| `rehype-autolink-headings` | Rehype | Wraps headings in anchor links                               |
+
+### Syntax Highlighting
+
+`rehype-pretty-code` uses Shiki under the hood (the same highlighter VS Code uses) and supports separate light/dark themes:
+
+```typescript
+[
+  rehypePrettyCode,
+  {
+    theme: {
+      dark: "github-dark",
+      light: "github-light",
+    },
+  },
+];
+```
+
+The active theme switches based on the `data-theme` attribute on `<html>`, set by the theme toggle.
+
+---
+
+## Writing with Obsidian
+
+[Obsidian](https://obsidian.md) is a local-first Markdown editor built around a concept called a **vault**, which is just a folder of `.md` files treated as an interconnected knowledge base. The `content/` folder in this repo is that vault.
+
+The killer feature is **wiki links**: type `[[Some Note]]` to link to another note by name, without knowing its file path or URL. Obsidian renders these as clickable links in the editor and builds a graph of how notes connect.
+
+The site preserves this syntax in the rendered output via `remark-wiki-link`:
+
+```typescript
+[
+  remarkWikiLink,
+  {
+    pageResolver: (name: string) => [name.toLowerCase().replace(/\s+/g, "-")],
+    hrefTemplate: (permalink: string) => `/notes/${permalink}`,
+  },
+];
+```
+
+When the MDX compiler encounters `[[Some Note]]`, this plugin:
+
+1. Calls `pageResolver("Some Note")` → `["some-note"]`
+2. Calls `hrefTemplate("some-note")` → `/notes/some-note`
+3. Emits `<a href="/notes/some-note">Some Note</a>`
+
+The result: I can write notes in Obsidian with natural wiki links, and they become real hyperlinks on this site with zero extra work.
+
+### Content Folder Structure
+
+```
+content/
+  blog/          ← Tech Talk posts
+    nextjs-deep-dive.mdx
+    some-other-post.mdx
+  notes/         ← Slice of Life notes
+    a-note.mdx
+    another-note.mdx
+```
+
+Adding content is just adding files. The slug comes from the filename, the metadata comes from frontmatter, and `getAllPosts()` / `getAllNotes()` pick them up automatically on the next build.
+
+---
+
+## Putting It All Together: The Build Flow
+
+When `npm run build` runs:
+
+1. Next.js calls `generateStaticParams()` on every dynamic route to collect all slugs.
+2. For each slug, it calls the page component, which calls `getPostBySlug(slug)` or `getNoteBySlug(slug)`.
+3. `getPostBySlug` reads the `.mdx` file from disk and parses it with `gray-matter`.
+4. The raw MDX content string is passed to `MDXRenderer`, which compiles and renders it through the remark/rehype pipeline.
+5. The rendered React tree is serialized to HTML.
+6. All pages are written to `out/` as static `.html` files.
+7. GitHub Actions deploys `out/` to GitHub Pages.
+
+The entire build is deterministic, meaning the same content always produces the same output. No network calls at request time, no database reads, no auth checks. Just files in, HTML out.
+
+I hope you learned something new while reading through this. This site has been my first hands-on experience working with Next.js. I have further plans to enhance this site with fun and interesting things such as embedded demos of my Pico-8 games, and more themes via CSS styling exercises. Until next time!
+
+---
+
+## References
+
+- [Next.js Documentation](https://nextjs.org/docs): App Router, routing conventions, static export
+- [next-mdx-remote](https://github.com/hashicorp/next-mdx-remote): MDX rendering for Next.js, including the RSC edition used here
+- [MDX](https://mdxjs.com): The MDX format specification and how it extends Markdown with JSX
+- [gray-matter](https://github.com/jonschlinkert/gray-matter): YAML frontmatter parser
+- [rehype-pretty-code](https://rehype-pretty-code.netlify.app): Syntax highlighting plugin powered by Shiki
+- [Shiki](https://shiki.style): The syntax highlighter underlying `rehype-pretty-code`
+- [remark-gfm](https://github.com/remarkjs/remark-gfm): GitHub Flavored Markdown support (tables, strikethrough, task lists)
+- [remark-wiki-link](https://github.com/landakram/remark-wiki-link): `[[wiki link]]` syntax support
+- [rehype-slug](https://github.com/rehypejs/rehype-slug): Adds `id` attributes to headings
+- [rehype-autolink-headings](https://github.com/rehypejs/rehype-autolink-headings): Wraps headings in self-linking anchors
+- [Obsidian](https://obsidian.md): Local-first Markdown editor and knowledge base
+- [GitHub Pages](https://pages.github.com): Static site hosting used to deploy this site
