@@ -9,7 +9,7 @@ draft: false
 
 Full-stack software engineer with experience across AWS, React, Angular, Java, and Node.js.
 
-- [Email]()
+- [contact@call-me-ty.com](mailto:contact@call-me-ty.com)
 - [GitHub](https://github.com/Schizem)
 - [LinkedIn](https://www.linkedin.com/in/tyler-hay-13446b336/)
 

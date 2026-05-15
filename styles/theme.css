@@ -2,7 +2,7 @@
 
 :root {
   /* Warm off-white in light mode — easier on the eyes than stark white */
-  --bg: #fdfaf6;
+  --bg: #f9f0e3;
   --bg-secondary: #f5f1eb;
   --fg: #25252b;
   --fg-muted: #5c5a55;
@@ -188,13 +188,13 @@ a:hover {
 .sidebar-logo {
   font-weight: 700;
   font-size: 2rem;
-  color: var(--fg);
+  color: var(--accent);
   text-decoration: none;
   letter-spacing: -0.01em;
 }
 
 .sidebar-logo:hover {
-  color: var(--accent);
+  color: var(--fg);
 }
 
 .sidebar-divider {
@@ -758,7 +758,9 @@ h4 {
   background: var(--bg);
   text-decoration: none;
   white-space: nowrap;
-  transition: border-color 0.1s, color 0.1s;
+  transition:
+    border-color 0.1s,
+    color 0.1s;
 }
 
 .project-btn:hover {
