@@ -32,8 +32,8 @@ export function MDXRenderer({ source }: Props) {
               rehypePrettyCode,
               {
                 theme: {
-                  dark: "github-dark",
-                  light: "github-light",
+                  dark: "one-dark-pro",
+                  light: "catppuccin-latte",
                 },
               },
             ],
