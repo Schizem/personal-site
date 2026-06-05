@@ -17,7 +17,7 @@ Full-stack software engineer with experience across AWS, React, Angular, Java, a
 
 ## Experience
 
-### Initech Global, Inc. — Grand Rapids, MI
+### Initech Global, Inc. - Grand Rapids, MI
 
 **January 2021 – March 2026**
 
@@ -30,7 +30,7 @@ Full-stack software engineer with experience across AWS, React, Angular, Java, a
 
 ---
 
-### Amway Corp. _(via Initech Global, Inc.)_ — Ada, MI
+### Amway Corp. _(via Initech Global, Inc.)_ - Ada, MI
 
 **Senior Software Engineer · AWS / Angular**
 
@@ -48,11 +48,11 @@ A large-scale AWS reporting platform that delivers weekly and monthly bonus repo
 
 ---
 
-### BISSELL Homecare, Inc. _(via Initech Global, Inc.)_ — Grand Rapids, MI
+### BISSELL Homecare, Inc. _(via Initech Global, Inc.)_ - Grand Rapids, MI
 
 **Senior Software Engineer · React / Laravel PHP**
 
-_BISSELL Pet Foundation — Transport_
+_BISSELL Pet Foundation - Transport_
 
 An internal React app that facilitates and organizes transport logistics for animal shelters affiliated with Bissell Pet Foundation.
 

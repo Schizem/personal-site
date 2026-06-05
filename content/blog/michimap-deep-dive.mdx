@@ -1,0 +1,385 @@
+---
+title: "How MichiMap Works: .NET, Azure Functions, and Five Government APIs"
+date: "2026-06-04"
+tags: ["csharp", "dotnet", "azure", "angular"]
+description: "A technical walkthrough of MichiMap, an interactive map of Michigan natural events built with ASP.NET Core, Azure Functions, and data from NWS, NASA, EPA, and the Michigan DNR."
+draft: false
+---
+
+MichiMap is an interactive map that shows active natural events across Michigan: flood warnings, wildfires, controlled burns, air quality alerts, and fish observations. It pulls from five different government APIs, normalizes everything into a common data model, stores it in Azure SQL, and serves it to an Angular frontend as GeoJSON.
+
+It's also my first time writing C#, building with .NET, and deploying anything to Azure. This post walks through how it all fits together.
+
+---
+
+## The Stack at a Glance
+
+| Layer          | Technology                                    |
+| -------------- | --------------------------------------------- |
+| Frontend       | Angular 21, Leaflet, Angular Material         |
+| API            | ASP.NET Core 8                                |
+| Data ingestion | Azure Functions (timer-triggered)             |
+| Database       | Azure SQL (serverless), Entity Framework Core |
+| Infrastructure | Azure Bicep (IaC)                             |
+| CI/CD          | Azure Pipelines                               |
+| Testing        | xUnit                                         |
+
+---
+
+## Solution Structure
+
+The repository is split into four projects under `src/`:
+
+```
+MichiMap/
+  src/
+    MichiMap.Api/          # ASP.NET Core Web API
+    MichiMap.Functions/    # Azure Functions (data ingestion)
+    MichiMap.Frontend/     # Angular 21 SPA
+    MichiMap.Tests/        # xUnit test suite
+  infra/                   # Bicep infrastructure templates
+  .azure-pipelines/        # CI and CD pipeline definitions
+```
+
+The API and the Functions are separate deployments. The API handles reads. The Functions handle writes. They share the same database and the same `NaturalEvent` model.
+
+---
+
+## The Data Model
+
+Everything that lands in the database is a `NaturalEvent`. Flood warnings, wildfire detections, and fish sightings all share the same shape:
+
+```csharp
+public class NaturalEvent
+{
+    public Guid EventId { get; set; } = Guid.NewGuid();
+    public required string EventType { get; set; }  // FLOOD, WILDFIRE, BURN, AIR_QUALITY, FISH_STOCK
+    public required string Title { get; set; }
+    public string? Description { get; set; }
+    public string? Severity { get; set; }           // LOW, MODERATE, HIGH, CRITICAL
+    public double Latitude { get; set; }
+    public double Longitude { get; set; }
+    public string? CountyFips { get; set; }
+    public DateTime FetchedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? ExpiresAt { get; set; }
+    public string? SourceUrl { get; set; }
+    public int? EventYear { get; set; }
+    public bool IsDeleted { get; set; } = false;
+}
+```
+
+Every event has a lat/lng, a type, and an optional expiry. The `IsDeleted` flag implements a soft-delete pattern: events are never hard-deleted from the database, just marked as gone. This makes the upsert logic clean and keeps a history.
+
+---
+
+## The Ingestion Layer: Azure Functions
+
+Six timer-triggered Azure Functions run on independent schedules, each responsible for one data source. They all follow the same pattern:
+
+1. Call the source API
+2. Normalize the response into `NaturalEvent` objects
+3. Upsert each event (insert or update, never duplicate)
+4. Soft-delete anything that has expired
+
+### Deterministic GUIDs
+
+The most important pattern across all fetchers is how event IDs are generated. Rather than creating a new GUID every time a function runs, IDs are derived deterministically from the source data:
+
+```csharp
+public static Guid StableGuid(string sourceId)
+{
+    var hash = MD5.HashData(Encoding.UTF8.GetBytes(sourceId));
+    return new Guid(hash);
+}
+```
+
+For a NASA fire detection, the source ID might be `VIIRS_2026-06-04T14:30:00_-84.5_43.2`. For a NWS alert it's the alert's own ID from the API. The result is that running the same fetcher twice on the same data produces the same GUIDs, so upserts are truly idempotent. No duplicates, no matter how many times the function fires.
+
+---
+
+## The Data Sources
+
+### National Weather Service: Flood Warnings
+
+**Schedule:** Every 15 minutes  
+**API:** `https://api.weather.gov/alerts/active?area=MI` (public, no key required)
+
+The NWS Alerts API returns active weather alerts for Michigan as JSON. Each alert has a type, severity, description, and geometry. The function classifies alerts as `FLOOD` or `WEATHER` based on the event name, then resolves a lat/lng for the marker.
+
+NWS alerts come in two geometry flavors. Some have a polygon. Some reference zones by SAME geocode (a 6-digit FIPS-based identifier). For polygon alerts, the function calculates the centroid:
+
+```csharp
+public static (double Lat, double Lng) PolygonCentroid(double[][] ring)
+{
+    // closed ring: first == last, so exclude the last point
+    var points = ring.Take(ring.Length - 1).ToArray();
+    return (
+        points.Average(p => p[1]),
+        points.Average(p => p[0])
+    );
+}
+```
+
+For zone-based alerts, it decodes the SAME geocodes to Michigan FIPS codes and looks up each county's centroid, placing one marker per affected county.
+
+NWS severity maps to the internal scale like this:
+
+```csharp
+public static string? MapNwsSeverity(string? nwsSeverity) => nwsSeverity switch
+{
+    "Extreme"  => "CRITICAL",
+    "Severe"   => "HIGH",
+    "Moderate" => "MODERATE",
+    "Minor"    => "LOW",
+    _          => null
+};
+```
+
+### NASA FIRMS: Active Wildfires
+
+**Schedule:** Every 2 hours  
+**API:** NASA FIRMS CSV endpoint, requires a free API key  
+**Sensor:** VIIRS aboard Suomi NPP and NOAA-20, 375-meter resolution
+
+FIRMS (Fire Information for Resource Management System) delivers satellite fire detections as CSV. Each row is a 375-meter pixel where the satellite registered significant heat. The function queries with a 7-day window and Michigan's bounding box, filters out low-confidence detections, and maps fire radiative power (FRP, measured in megawatts) to severity:
+
+```
+FRP >= 200 MW  →  CRITICAL
+FRP >= 50 MW   →  HIGH
+FRP >= 10 MW   →  MODERATE
+FRP < 10 MW    →  LOW
+```
+
+The stable ID for each detection is derived from the sensor name, acquisition timestamp, and coordinates, so a fire pixel that persists across multiple fetches updates in place rather than creating a new record.
+
+### EPA AirNow: Air Quality Alerts
+
+**Schedule:** Hourly  
+**API:** EPA AirNow API, requires a free key  
+**Coverage:** 15 Michigan metro areas across the Lower and Upper Peninsulas
+
+The AirNow function runs a query per city with a 50-mile radius search. To avoid flooding the map with duplicate markers for the same metro area, it keeps only the highest AQI reading per reporting region. Results are filtered to only show unhealthy readings (AQI > 100):
+
+```csharp
+public static string? MapAqiSeverity(int aqi)
+{
+    if (aqi >= 301) return "CRITICAL";   // Hazardous
+    if (aqi >= 201) return "HIGH";       // Very Unhealthy
+    if (aqi >= 151) return "MODERATE";   // Unhealthy
+    if (aqi >= 101) return "LOW";        // Unhealthy for Sensitive Groups
+    return null;                          // Good/Moderate: not shown on map
+}
+```
+
+When AQI is under 100, the function returns `null` and the event is skipped. This keeps the map from showing markers during normal air quality conditions.
+
+### Michigan DNR: Prescribed Burns
+
+**Schedule:** Daily at 6 AM UTC  
+**API:** Michigan DNR ArcGIS FeatureServer (public, no key required)
+
+The DNR maintains an ArcGIS service with records of prescribed fire activity across Michigan. The function paginates through results in batches of 1,000, handles Point, Polygon, and MultiPolygon geometries, and strips county name suffixes (`"Allegan County"` becomes `"Allegan"`) before looking up the FIPS code.
+
+Since burn records are historical, not live, their expiry is set to July 1st of the following year. A record from 2025 sticks around until mid-2026 before the soft-delete runs.
+
+### Michigan DNR Fish Atlas: Fish Observations
+
+**Schedule:** Daily at 7 AM UTC  
+**API:** Michigan DNR Fish Atlas ArcGIS FeatureServer (public, no key required)
+
+The Fish Atlas data is historical observation records of fish species at specific locations. The function extracts species name, observation year, and coordinates, maps county data via the county lookup service, and uses the location plus year to generate a stable ID. Fish records have no expiration; they're permanent reference data.
+
+### NIFC: Wildland Fire Incidents
+
+**Schedule:** Daily at 6 AM UTC  
+**API:** NIFC WFIGS (Wildland Fire Incident Geographic System) ArcGIS endpoint (public, no key)
+
+NIFC aggregates wildland fire incident reports from agencies across the country. The function queries for Michigan incidents classified as wildfires and maps acres burned to severity:
+
+```
+>= 1,000 acres  →  CRITICAL
+>= 100 acres    →  HIGH
+< 100 acres     →  MODERATE
+```
+
+Incidents get a 14-day expiration window and a stable ID derived from incident name, discovery date, and coordinates.
+
+---
+
+## The API Layer
+
+The ASP.NET Core API exposes three endpoints:
+
+| Endpoint                         | What it does                                                                                   |
+| -------------------------------- | ---------------------------------------------------------------------------------------------- |
+| `GET /api/events`                | Returns active events as a GeoJSON FeatureCollection, optional `?type=` and `?county=` filters |
+| `GET /api/events/{id}`           | Returns a single event by GUID for the sidebar detail panel                                    |
+| `GET /api/events/county-summary` | Returns per-county event counts via a stored procedure                                         |
+
+### GeoJSON Output
+
+Rather than returning raw database rows, the API maps everything through `GeoJsonService`, which produces a proper GeoJSON FeatureCollection:
+
+```csharp
+public object BuildFeatureCollection(IEnumerable<NaturalEvent> events)
+{
+    return new
+    {
+        type = "FeatureCollection",
+        features = events.Select(e => new
+        {
+            type = "Feature",
+            geometry = new
+            {
+                type = "Point",
+                coordinates = new[] { e.Longitude, e.Latitude }  // GeoJSON is [lng, lat]
+            },
+            properties = new
+            {
+                id        = e.EventId,
+                eventType = e.EventType,
+                title     = e.Title,
+                severity  = e.Severity,
+                countyFips = e.CountyFips,
+                fetchedAt  = e.FetchedAt,
+                expiresAt  = e.ExpiresAt,
+                eventYear  = e.EventYear,
+                sourceUrl  = e.SourceUrl
+            }
+        })
+    };
+}
+```
+
+GeoJSON coordinates are `[longitude, latitude]`, not `[latitude, longitude]`. That ordering is easy to get wrong and causes every marker to show up in the wrong place.
+
+### Rate Limiting
+
+The API applies a fixed-window rate limiter to prevent abuse:
+
+```csharp
+builder.Services.AddRateLimiter(options =>
+{
+    options.AddFixedWindowLimiter("submissions", o =>
+    {
+        o.PermitLimit = 5;
+        o.Window = TimeSpan.FromHours(1);
+        o.QueueProcessingOrder = QueueProcessingOrder.OldestFirst;
+    });
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+});
+```
+
+### County Lookup
+
+`MichiganCountyService` is a singleton that holds a hardcoded dictionary of all 83 Michigan counties with their FIPS codes and centroid coordinates. Fetchers use it to resolve county names and FIPS codes without hitting a database table:
+
+```csharp
+public CountyInfo? Lookup(string countyName)
+    => _counties.TryGetValue(countyName, out var info) ? info : null;
+
+public CountyInfo? LookupByFips(string fips)
+    => _counties.Values.FirstOrDefault(c => c.Fips == fips);
+```
+
+---
+
+## The Frontend
+
+The Angular 21 frontend uses Leaflet for the map, Angular Material for UI components, and Angular signals for reactive state.
+
+### Signals and Effects
+
+Angular 19+ introduced signals as a first-class reactive primitive. The map component takes the active filter list as a signal input and uses an `effect()` to reactively show and hide marker layers:
+
+```typescript
+activeTypes = input<EventType[]>([]);
+
+constructor() {
+  effect(() => {
+    this.applyLayerVisibility(this.activeTypes());
+  });
+}
+```
+
+Whenever `activeTypes` changes, the effect fires automatically and updates which Leaflet layer groups are visible. No manual subscription management, no `ngOnChanges`.
+
+### Map Markers
+
+Each event renders as a Leaflet circle marker where the fill color represents the event type and the ring color represents severity:
+
+```typescript
+const marker = L.circleMarker([lat, lng], {
+  radius: 8,
+  fillColor: cfg.color, // event type color
+  color: severityColor ?? "#fff", // severity ring, white if no severity
+  weight: 2,
+  fillOpacity: 0.85,
+});
+```
+
+### Sidebar Detail
+
+Clicking a marker emits the selected `EventFeature` to the parent, which passes it into the `SidebarComponent`. The sidebar shows the event title, type, severity, source link, and fetch timestamp. The expiry date is only shown when it's within 14 days. For historical records like fish sightings, the expiry is just an internal cleanup date that doesn't mean anything to someone browsing the map.
+
+---
+
+## Infrastructure and Deployment
+
+### Bicep
+
+All Azure resources are defined as Bicep templates in `infra/`. The main template orchestrates three modules:
+
+```
+infra/
+  main.bicep         # Entry point, wires modules together
+  sql.bicep          # Azure SQL serverless database
+  storage.bicep      # Azure Storage (Functions runtime)
+  appservice.bicep   # App Service for API + Functions
+```
+
+Deploying the whole stack is one command:
+
+```bash
+az deployment group create \
+  --resource-group michimap-rg \
+  --template-file infra/main.bicep \
+  --parameters environment=prod sqlAdminPassword=... firmsApiKey=... epaApiKey=...
+```
+
+The template outputs the API URL and frontend URL after provisioning.
+
+### Azure Pipelines
+
+CI runs on every pull request: build, test, publish artifacts. CD runs on merge to main: deploy the API and Functions to App Service. API keys and connection strings live in Azure Key Vault, referenced in the pipeline rather than stored in source.
+
+---
+
+## What I Learned
+
+This was my first time writing C#, working with .NET, and deploying anything to Azure. A few things genuinely surprised me.
+
+**Dependency injection being built in was a revelation.** In Node.js I'm used to either wiring DI manually or pulling in a library to do it. In .NET it's just there from day one. You register a service in `Program.cs` in one line and the framework handles injecting it wherever you ask. After getting used to it, going back to manual wiring felt like a step backwards.
+
+**Entity Framework Core made the database feel like an afterthought in the best way.** The `UpsertEventAsync` pattern (check if a record exists, insert or update, restore soft-deleted records) is about ten lines of C#. Doing that cleanly in raw SQL takes a lot more care. I did still write one stored procedure for the county summary query, which was a good reminder that ORMs don't replace SQL entirely.
+
+**Azure Functions timer triggers just work.** I was expecting more ceremony around scheduled jobs. You define a cron expression, inject your dependencies the same way you would anywhere else, and write the function body. The runtime handles scheduling, missed-run detection, and structured logging without any extra wiring. Getting six fetchers running on different schedules was remarkably easy.
+
+**Bicep is more enjoyable than I expected.** I went in bracing for YAML-flavored infrastructure pain. Bicep actually reads close to code. Modules, parameters, and outputs compose in a way that makes sense. Running one `az deployment group create` command to provision the whole stack from scratch felt like I saved myself a lot of headache.
+
+**GeoJSON has an opinion about coordinate order.** It's `[longitude, latitude]`, not `[latitude, longitude]`. I got this backwards on the first pass and spent longer than I'd like to admit figuring out why every marker was showing up somewhere in the ocean.
+
+---
+
+## References
+
+- [NWS Alerts API](https://www.weather.gov/documentation/services-web-api): Active weather alerts for any US state, free with no key
+- [NASA FIRMS](https://firms.modaps.eosdis.nasa.gov/api/): Near real-time satellite fire detection data, free API key
+- [EPA AirNow API](https://docs.airnowapi.org/): Hourly air quality index data by location, free key
+- [Michigan DNR ArcGIS Services](https://gis-michigan.opendata.arcgis.com/): Public ArcGIS REST endpoints for DNR data layers
+- [NIFC WFIGS](https://data-nifc.opendata.arcgis.com/): Wildland fire incident data from the National Interagency Fire Center
+- [ASP.NET Core Documentation](https://learn.microsoft.com/en-us/aspnet/core/): Microsoft's docs for the web framework used here
+- [Azure Functions Documentation](https://learn.microsoft.com/en-us/azure/azure-functions/): Timer triggers, dependency injection, and deployment
+- [Bicep Documentation](https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/): Infrastructure as code for Azure resources
+- [Leaflet](https://leafletjs.com): The open-source JavaScript mapping library used in the frontend
+- [GeoJSON Specification](https://geojson.org): The format the API uses to serve event data to the map

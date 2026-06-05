@@ -1,7 +1,14 @@
 {
   "projects": [
     {
+      "repo": "Schizem/MichiMap",
+      "blogPost": "/blog/michimap-deep-dive",
+      "demo": "https://michimap.org",
+      "featured": true
+    },
+    {
       "repo": "Schizem/personal-site",
+      "blogPost": "/blog/nextjs-deep-dive",
       "featured": true
     }
   ]
